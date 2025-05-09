@@ -1,25 +1,25 @@
 const fs = require('fs');
 const path = require('path');
-const { v4: uuidv4 } = require('uuid');
 const storageConfig = require('../config/storage');
+const cacheService = require('../services/cacheService');
 
 class FileModel {
-    static generateUniqueFilename(originalName) {
-        const ext = path.extname(originalName);
-        return `${uuidv4()}${ext}`;
-    }
-
-    static saveUploadedFile(buffer, filename) {
+    static saveUploadedFile(buffer, originalName) {
+        const filename = cacheService.getAvailableFilename(originalName);
         const filePath = path.join(storageConfig.uploadDir, filename);
         fs.writeFileSync(filePath, buffer);
+        cacheService.releaseLock(filename);
         return filename;
     }
 
-    static saveConvertedFile(content, filename) {
-        const convertedFilename = `${path.parse(filename).name}_converted.html`;
-        const filePath = path.join(storageConfig.convertedDir, convertedFilename);
+    static saveConvertedFile(content, originalName) {
+        const baseName = path.parse(originalName).name;
+        const convertedFilename = `${baseName}_converted.html`;
+        const finalName = cacheService.getAvailableFilename(convertedFilename);
+        const filePath = path.join(storageConfig.convertedDir, finalName);
         fs.writeFileSync(filePath, content);
-        return convertedFilename;
+        cacheService.releaseLock(finalName);
+        return finalName;
     }
 
     static deleteFile(filename, type = 'uploaded') {
@@ -28,6 +28,7 @@ class FileModel {
         
         if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
+            cacheService.removeFromCache(filename);
             return true;
         }
         return false;
